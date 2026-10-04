@@ -1,0 +1,124 @@
+# Carnet DevOps — la même pile pour staging et prod (standard du VPS).
+# Seul le fichier d'environnement change (.env.staging ou .env) ; c'est
+# /app/vps-platform/bin/deploy.sh qui le choisit. Ne jamais lancer ce fichier
+# avec un « docker compose up » nu.
+#
+#   Internet → nginx-proxy (HTTPS) → app (FrankenPHP :8000)
+#   app, worker, scheduler → db (PostgreSQL), redis (Valkey)   [réseau privé]
+
+x-defaults: &defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-app: &app
+  <<: *defaults
+  image: skills-devops:${IMAGE_TAG:-latest}
+  env_file: [ "${ENV_FILE:-.env}" ]
+  environment:
+    APP_VERSION: ${IMAGE_TAG:-dev}
+  depends_on:
+    db: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  networks: [ default ]
+  # Journaux envoyés dans Grafana (observabilité de la plateforme) : le label suffit.
+  labels:
+    observability.enable: "true"
+    observability.app: skills-devops
+    observability.deployment: ${DEPLOYMENT:-prod}
+
+services:
+  # ── Web : seul conteneur visible par nginx-proxy ────────────────────────
+  app:
+    <<: *app
+    build: { context: . }
+    environment:
+      APP_VERSION: ${IMAGE_TAG:-dev}
+      # Le nom public vient du .env (APP_PUBLIC_HOST). Aucun DNS à créer : le
+      # wildcard *.visibilitycam.com amène déjà ce nom sur le VPS.
+      VIRTUAL_HOST: ${APP_PUBLIC_HOST}
+      VIRTUAL_PORT: "8000"
+      LETSENCRYPT_HOST: ${APP_PUBLIC_HOST}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    networks: [ default, nginx-proxy ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8000/up >/dev/null" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy: { resources: { limits: { cpus: "0.5", memory: "256M" } } }
+
+  # ── File d'attente ──────────────────────────────────────────────────────
+  worker:
+    <<: *app
+    command: [ "php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600" ]
+    stop_grace_period: 60s
+    healthcheck: { disable: true }
+    deploy: { resources: { limits: { cpus: "0.25", memory: "192M" } } }
+
+  # ── Tâches planifiées (une par minute ici : le « battement » du scheduler)
+  scheduler:
+    <<: *app
+    command: [ "php", "artisan", "schedule:work" ]
+    healthcheck: { disable: true }
+    deploy: { resources: { limits: { cpus: "0.25", memory: "128M" } } }
+
+  # ── PostgreSQL : données dans un volume, jamais exposé ──────────────────
+  db:
+    <<: *defaults
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes: [ "db-data:/var/lib/postgresql" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy: { resources: { limits: { cpus: "0.5", memory: "256M" } } }
+
+  # ── Valkey (Redis) : cache, sessions, file d'attente ────────────────────
+  redis:
+    <<: *defaults
+    image: valkey/valkey:8.1-alpine
+    command: [ "valkey-server", "--appendonly", "yes", "--maxmemory", "96mb", "--maxmemory-policy", "noeviction" ]
+    volumes: [ "redis-data:/data" ]
+    healthcheck:
+      test: [ "CMD", "valkey-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy: { resources: { limits: { cpus: "0.25", memory: "128M" } } }
+
+  # ── Sauvegarde chiffrée : chaque nuit + avant chaque mise en production ─
+  backup:
+    <<: *defaults
+    build: { context: "${PLATFORM_DIR:-/app/vps-platform}/images/db-backup" }
+    image: vps/db-backup:1
+    env_file: [ "${ENV_FILE:-.env}" ]
+    environment:
+      BACKUP_NAME: skills-devops-${DEPLOYMENT:-prod}
+      BACKUP_ENGINE: postgres
+      PGHOST: db
+      PGDATABASE: ${DB_DATABASE}
+      PGUSER: ${DB_USERNAME}
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes: [ "backups:/backups" ]
+    depends_on: { db: { condition: service_healthy } }
+    deploy: { resources: { limits: { cpus: "0.25", memory: "256M" } } }
+
+volumes:
+  db-data:
+  redis-data:
+  backups:
+
+networks:
+  default:
+    name: skills-devops-${DEPLOYMENT:-prod}-internal
+  nginx-proxy:
+    name: ${NGINX_PROXY_NETWORK:-nginx-proxy}
+    external: true
