@@ -118,6 +118,20 @@ services:
       PGPASSWORD: ${DB_PASSWORD}
     volumes: [ "backups:/backups" ]
     depends_on: { skills-devops-db: { condition: service_healthy } }
+    # Journaux de la sauvegarde dans Grafana : « backup: uploaded to s3://… » chaque nuit, ou son absence.
+    labels:
+      observability.enable: "true"
+      observability.app: skills-devops
+      observability.deployment: ${DEPLOYMENT:-prod}
+    # « Healthy » = une copie chiffrée de moins de 36 h existe. Une sauvegarde qui cesse de tourner devient
+    # visible (docker ps, audit) au lieu de passer inaperçue. start_period : la première copie nocturne
+    # (BACKUP_TIME) peut n'arriver que le lendemain d'un premier déploiement.
+    healthcheck:
+      test: [ "CMD-SHELL", "find /backups -name '*.dump.enc' -mmin -2160 | grep -q ." ]
+      interval: 1h
+      timeout: 10s
+      retries: 1
+      start_period: 30h
     deploy: { resources: { limits: { cpus: "0.25", memory: "256M" } } }
 
 volumes:
