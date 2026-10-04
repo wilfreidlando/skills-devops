@@ -28,8 +28,8 @@ x-app: &app
     DB_HOST: skills-devops-db
     REDIS_HOST: skills-devops-redis
   depends_on:
-    db: { condition: service_healthy }
-    redis: { condition: service_healthy }
+    skills-devops-db: { condition: service_healthy }
+    skills-devops-redis: { condition: service_healthy }
   networks: [ default ]
   # Journaux envoyés dans Grafana (observabilité de la plateforme) : le label suffit.
   labels:
@@ -75,7 +75,7 @@ services:
     deploy: { resources: { limits: { cpus: "0.25", memory: "128M" } } }
 
   # ── PostgreSQL : données dans un volume, jamais exposé ──────────────────
-  db:
+  skills-devops-db:
     <<: *defaults
     image: postgres:18-alpine
     environment:
@@ -83,7 +83,6 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes: [ "db-data:/var/lib/postgresql" ]
-    networks: { default: { aliases: [ skills-devops-db ] } }
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USERNAME} -d ${DB_DATABASE}" ]
       interval: 5s
@@ -92,12 +91,11 @@ services:
     deploy: { resources: { limits: { cpus: "0.5", memory: "256M" } } }
 
   # ── Valkey (Redis) : cache, sessions, file d'attente ────────────────────
-  redis:
+  skills-devops-redis:
     <<: *defaults
     image: valkey/valkey:8.1-alpine
     command: [ "valkey-server", "--appendonly", "yes", "--maxmemory", "96mb", "--maxmemory-policy", "noeviction" ]
     volumes: [ "redis-data:/data" ]
-    networks: { default: { aliases: [ skills-devops-redis ] } }
     healthcheck:
       test: [ "CMD", "valkey-cli", "ping" ]
       interval: 5s
@@ -119,7 +117,7 @@ services:
       PGUSER: ${DB_USERNAME}
       PGPASSWORD: ${DB_PASSWORD}
     volumes: [ "backups:/backups" ]
-    depends_on: { db: { condition: service_healthy } }
+    depends_on: { skills-devops-db: { condition: service_healthy } }
     deploy: { resources: { limits: { cpus: "0.25", memory: "256M" } } }
 
 volumes:

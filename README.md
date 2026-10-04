@@ -98,10 +98,12 @@ chmod 600 /app/skills-devops/staging/.env.staging /app/skills-devops/prod/.env
 
 ```bash
 cd /app/skills-devops/staging
+/app/vps-platform/bin/deploy.sh check staging   # contrôle seul : accès git, noms, platform.env
 /app/vps-platform/bin/deploy.sh watch
 ```
 
-`watch` construit l'image du dernier commit de `main`, vérifie les noms,
+`check` ne modifie rien : il dit ce qui bloquerait le déploiement (origin en
+HTTPS, service inconnu, nom en conflit avec un autre projet du VPS). `watch` construit l'image du dernier commit de `main`, vérifie les noms,
 sauvegarde, migre, démarre, contrôle la santé. Ouvrir
 <https://skills-devops-staging.visibilitycam.com> (le certificat peut prendre
 une minute la première fois). Cliquer « Envoyer un job », recharger : la carte
