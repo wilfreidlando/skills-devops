@@ -3,8 +3,14 @@
 # /app/vps-platform/bin/deploy.sh qui le choisit. Ne jamais lancer ce fichier
 # avec un « docker compose up » nu.
 #
-#   Internet → nginx-proxy (HTTPS) → app (FrankenPHP :8000)
-#   app, worker, scheduler → db (PostgreSQL), redis (Valkey)   [réseau privé]
+#   Internet → nginx-proxy (HTTPS) → skills-devops-web (FrankenPHP :8000)
+#   web, worker, scheduler → skills-devops-db (PostgreSQL),
+#                            skills-devops-redis (Valkey)       [réseau privé]
+#
+# Noms uniques au projet, jamais « app », « db » ou « redis » : le service web
+# est aussi branché sur nginx-proxy, réseau partagé par toutes les apps du VPS.
+# Si une autre app y expose un conteneur « db », Docker peut y résoudre « db »
+# vers SA base (vécu au premier déploiement : Connection refused).
 
 x-defaults: &defaults
   restart: unless-stopped
@@ -16,8 +22,11 @@ x-app: &app
   <<: *defaults
   image: skills-devops:${IMAGE_TAG:-latest}
   env_file: [ "${ENV_FILE:-.env}" ]
-  environment:
+  environment: &app-env
     APP_VERSION: ${IMAGE_TAG:-dev}
+    # Imposés ici (priment sur le .env) : voir l'en-tête.
+    DB_HOST: skills-devops-db
+    REDIS_HOST: skills-devops-redis
   depends_on:
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -30,11 +39,11 @@ x-app: &app
 
 services:
   # ── Web : seul conteneur visible par nginx-proxy ────────────────────────
-  app:
+  skills-devops-web:
     <<: *app
     build: { context: . }
     environment:
-      APP_VERSION: ${IMAGE_TAG:-dev}
+      <<: *app-env
       # Le nom public vient du .env (APP_PUBLIC_HOST). Aucun DNS à créer : le
       # wildcard *.visibilitycam.com amène déjà ce nom sur le VPS.
       VIRTUAL_HOST: ${APP_PUBLIC_HOST}
@@ -74,6 +83,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes: [ "db-data:/var/lib/postgresql" ]
+    networks: { default: { aliases: [ skills-devops-db ] } }
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USERNAME} -d ${DB_DATABASE}" ]
       interval: 5s
@@ -87,6 +97,7 @@ services:
     image: valkey/valkey:8.1-alpine
     command: [ "valkey-server", "--appendonly", "yes", "--maxmemory", "96mb", "--maxmemory-policy", "noeviction" ]
     volumes: [ "redis-data:/data" ]
+    networks: { default: { aliases: [ skills-devops-redis ] } }
     healthcheck:
       test: [ "CMD", "valkey-cli", "ping" ]
       interval: 5s
@@ -103,7 +114,7 @@ services:
     environment:
       BACKUP_NAME: skills-devops-${DEPLOYMENT:-prod}
       BACKUP_ENGINE: postgres
-      PGHOST: db
+      PGHOST: skills-devops-db
       PGDATABASE: ${DB_DATABASE}
       PGUSER: ${DB_USERNAME}
       PGPASSWORD: ${DB_PASSWORD}
