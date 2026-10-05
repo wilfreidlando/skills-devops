@@ -9,7 +9,7 @@
 
 | Environnement | Adresse | Dossier sur le serveur | Fichier d'environnement | Version déployée | Qui déploie, et comment | Sauvegardée ? |
 | --- | --- | --- | --- | --- | --- | --- |
-| **staging** | `https://skills-devops-staging.visibilitycam.com` | `/app/skills-devops/staging` | `.env.staging` (600) | `main` | à la main : `deploy.sh watch` (la tâche planifiée est décrite au § 5, **à poser**) | **non** (`BACKUP_DISABLED=1`) |
+| **staging** | `https://skills-devops-staging.visibilitycam.com` | `/app/skills-devops/staging` | `.env.staging` (600) | `main` (`STAGING_BRANCH=main` dans `platform.env` ; pas de `BRANCH_PROD` : la production reçoit ce que le staging a validé) | à la main : `deploy.sh watch` (la tâche planifiée est décrite au § 5, **à poser**) | **non** (`BACKUP_DISABLED=1`) |
 | **production** | `https://skills-devops.visibilitycam.com` | `/app/skills-devops/prod` | `.env` (600) | **la version validée en staging**, jamais construite en production | le responsable du projet : `deploy.sh promote` | **oui**, chaque nuit à 03:15 UTC, **sur S3** |
 
 ## 2. Ce qui tourne
@@ -41,6 +41,8 @@ Aucun port n'est publié sur Internet. Le projet Docker s'appelle `skills-devops
 Modèles : `.env.production.example` et `.env.staging.example` à la racine. Droits des `.env` : `600`, propriétaire `root`.
 
 ## 4. Premier déploiement d'un environnement
+
+> **Commandes.** Elles s'écrivent `/app/vps-platform/bin/deploy.sh …`, ou simplement `vps-deploy …` quand les commandes courtes de la plateforme sont installées (`vps` donne l'aide, `vps where` dit où est la plateforme).
 
 ```bash
 # 1. Les noms sont-ils libres ? (rien n'est modifié)
