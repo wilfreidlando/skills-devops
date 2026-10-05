@@ -1,6 +1,6 @@
 # Déploiement de skills-devops
 
-> **Pour toute l'équipe.** Comment ce projet est déployé sur le VPS, environnement par environnement. À jour au **2026-10-05**, version du contrat de la plateforme : **2.4**.
+> **Pour toute l'équipe.** Comment ce projet est déployé sur le VPS, environnement par environnement. À jour au **2026-10-05**, version du contrat de la plateforme : **2.5**.
 > La plateforme (outils, règles, runbooks) : <https://github.com/wilfreidlando/vcam-infra-deploy>. Profil de projet : **A, standard (staging puis production)**
 > ([profils](https://github.com/wilfreidlando/vcam-infra-deploy/blob/main/docs/reference/profils-de-projet.md)). Ce projet est le **projet pilote** : il sert d'exemple complet
 > ([guide 18](https://github.com/wilfreidlando/vcam-infra-deploy/blob/main/guides/18-le-projet-pilote-skills-devops.md)).
@@ -124,8 +124,18 @@ La production n'est **jamais** déployée automatiquement.
 
 **Qui prévenir** : le responsable du projet pilote ; plateforme : le responsable de la plateforme.
 
-## 11. Historique de ce document
+## 11. Écarts connus avec le standard (à résorber)
+
+| Écart | Pourquoi | Risque | Pour le résorber | Échéance |
+| --- | --- | --- | --- | --- |
+| **Le staging ne semble pas encore automatique** | La tâche planifiée (§ 5) ne paraît pas posée : aucune entrée dans `/etc/cron*`, pas de fichier `/var/log/vps-deploy.log`, déploiements du staging lancés à la main. **À confirmer** : le crontab de `root` n'est pas lisible sans accès root | Un merge n'arrive en staging que quand quelqu'un lance la commande | Poser la ligne `cron` du § 5 (responsable de la plateforme) | à décider |
+| **Exercice de restauration à refaire** | Le premier (2026-10-04) a révélé que la restauration ne remplaçait pas la base ; l'agent a été corrigé depuis | La restauration n'a pas été rejouée avec l'agent à jour | Refaire l'exercice mensuel avec la table-témoin (§ 8) | à décider |
+| **Phrase de chiffrement des sauvegardes** | Sa conservation **hors du serveur** n'est pas vérifiable depuis le serveur | Sans elle, les sauvegardes sont illisibles | Le responsable confirme où elle est conservée | à décider |
+| **Dépôt public à titre provisoire** | Migration vers GitLab décidée, pas encore faite | Le dépôt et ses liens (`github.com`) changeront | Migrer, puis mettre à jour les liens de cette fiche | à décider |
+
+## 12. Historique de ce document
 
 | Date | Changement |
 | --- | --- |
 | 2026-10-05 | Création d'après le modèle de la plateforme : environnements, sauvegardes sur S3 (staging non sauvegardé), observabilité, mise à jour de ce qui existe |
+| 2026-10-05 | Contrôle en profondeur : contrat 2.5 ; relue contre le serveur (sauvegarde nocturne à 03:15 UTC avec envois S3 constatés, worker relancé toutes les heures par `--max-time`) |
